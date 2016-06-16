@@ -1,18 +1,34 @@
-
+import pandas as pd
 import urllib2
 import numpy as np
 
 def main():
-    url = "http://eklima.met.no/metdata/MetDataService?invoke=getMetData&timeserietypeID=0&format=&from=2005-07-01&to=2005-07-02&stations=18700&elements=rr%2Ctan%2Ctax&hours=&months=&username="
-    getMetData()
+    station = "27120"
+    from_date = "2010-07-01"
+    to_date = "2016-07-30"
+    
+    #getStationsProperties()
+    getMetData(from_date, to_date, station)
+
+def save_dataFrame(df, path):
+    df.to_csv(path, index=None)
+    print 'Dataframe saved to:',path
 
 
-def getMetData():
+def getStationsProperties():
+    request = 'http://eklima.met.no/met/MetService?invoke=getStationsProperties&stations=&username='
+    response = urllib2.urlopen(request)
+    data = response.readlines()
+    dataFrame = parese_getStationsProperties(data)
+    save_dataFrame(dataFrame, 'stations.csv')
+
+
+def getMetData(from_date, to_date, station_id):
     timeserietypeID_ = "0"
     format_ = ""
-    from_ = "2005-07-01"
-    to_ = "2005-07-03"
-    stations_ = "18700"
+    from_ = from_date #"2005-07-01"
+    to_ = to_date #"2005-07-30"
+    stations_ = station_id #"18700"
     elements_ = "rr%2Ctan%2Ctax"
     hours_ = ""
     months_ = ""
@@ -35,52 +51,70 @@ def getMetData():
     response = urllib2.urlopen(request)
     data = response.readlines()
 
-    parese_xml(data)
+    path = 'data/' + station_id + '_' +  from_date + '_' + to_date + '.csv'
+    save_dataFrame(parese_getMetaData(data), path)
 
-def decode_id(s):
-    repls = ('<id xsi:type="xsd:string">', ''), ('</id>', ''), ('\n', '')
-    return reduce(lambda a, kv: a.replace(*kv), repls, s)
-  
-def decode_q(s):
-    repls = ('<quality xsi:type="xsd:int">', ''), ('</quality>', ''), ('\n', '')
-    return float(reduce(lambda a, kv: a.replace(*kv), repls, s))
-
-def decode_v(s):
-    repls = ('<value xsi:type="xsd:string">', ''), ('</value>', ''), ('\n', '')
-    return float(reduce(lambda a, kv: a.replace(*kv), repls, s))
-
-def decode_d(s):
-    repls = ('<from xsi:type="xsd:dateTime">', ''), ('</from>', ''), ('\n', '')
+def decode_general(s, first, second):
+    repls = (first, ''), (second, ''), ('\n', '')
     return reduce(lambda a, kv: a.replace(*kv), repls, s)
 
-def parese_xml(xml_data):
-    element_id = ""
-    element_q = ""
-    element_v = ""
-    element_d = ""
+def parese_getStationsProperties(xml_data):
+    started_elemtent = False
+    elements = []
+    
+    for line in xml_data:
+
+        if '<fromDay xsi:type="xsd:int">' in line:
+            elements.append(decode_general(line, '<fromDay xsi:type="xsd:int">', '</fromDay>'))
+        if '<fromMonth xsi:type="xsd:int">' in line:
+            elements.append(decode_general(line, '<fromMonth xsi:type="xsd:int">', '</fromMonth>'))
+        if '<fromYear xsi:type="xsd:int">' in line:
+            elements.append(decode_general(line, '<fromYear xsi:type="xsd:int">', '</fromYear>'))
+        if '<toDay xsi:type="xsd:int">' in line:
+            elements.append(decode_general(line, '<toDay xsi:type="xsd:int">', '</toDay>'))
+        if '<toMonth xsi:type="xsd:int">' in line:
+            elements.append(decode_general(line, '<toMonth xsi:type="xsd:int">', '</toMonth>'))
+        if '<toYear xsi:type="xsd:int">' in line:
+            elements.append(decode_general(line, '<toYear xsi:type="xsd:int">', '</toYear>'))
+
+        if '<stnr xsi:type="xsd:int">' in line:
+            elements.append(decode_general(line, '<stnr xsi:type="xsd:int">', '</stnr>'))
+        if '<department xsi:type="xsd:string">' in line:
+            elements.append(decode_general(line, '<department xsi:type="xsd:string">', '</department>'))
+        if '<department xsi:type="xsd:string" xsi:nil="true"/>' in line:
+            elements.append(decode_general(line, '<department xsi:type="xsd:string" ', 'xsi:nil="true"/>'))  
+        if '<name xsi:type="xsd:string">' in line:
+            elements.append(decode_general(line, '<name xsi:type="xsd:string">', '</name>'))
+        if '<latDec xsi:type="xsd:double">' in line:
+            elements.append(decode_general(line, '<latDec xsi:type="xsd:double">','</latDec>'))
+        if '<lonDec xsi:type="xsd:double">' in line:
+            elements.append(decode_general(line, '<lonDec xsi:type="xsd:double">','</lonDec>'))
+ 
+    elements = np.reshape(elements, (len(elements)/11,11))
+    df = pd.DataFrame(elements)
+    df.columns = ['department', 'from_day','from_month', 'from_year','lat', 'lon','name', 'stnr', 'to_day', 'to_month', 'to_year']
+    return df
+
+
+def parese_getMetaData(xml_data):
     elements = []
     started_elemtent = False
 
     for line in xml_data:
-
-        if '<item xsi:type="ns2:no_met_metdata_WeatherElement">\n' in line:
-            started_elemtent = True
-
         if 'from xsi:type="xsd:dateTime' in line:
-            element_d = decode_d(line)
-
-        if 'id xsi:type="xsd:string' in line and started_elemtent:
-            element_id = decode_id(line)
-        
-        if 'quality xsi:type="xsd:int' in line and started_elemtent:
-            element_q = decode_q(line)
+            elements.append(decode_general(line, '<from xsi:type="xsd:dateTime">', '</from>'))
+            started_elemtent = True
+      
+        if '<quality xsi:type="xsd:int">' in line and started_elemtent:
+            elements.append(decode_general(line, '<quality xsi:type="xsd:int">', '</quality>'))
 
         if 'value xsi:type="xsd:string' in line and started_elemtent:
-            element_v = decode_v(line)
-            elements.append([element_id, element_q, element_v, element_d])
-            started_elemtent = False
+            elements.append(decode_general(line, '<value xsi:type="xsd:string">', '</value>'))
 
-    print elements
+    elements = np.reshape(elements, (len(elements)/7,7))
+    df = pd.DataFrame(elements)
+    df.columns = ['date', 'RR_quality','RR_value', 'TAX_quality','TAX_value', 'TAN_quality','TAN_value']
+    return df
 
 
 
